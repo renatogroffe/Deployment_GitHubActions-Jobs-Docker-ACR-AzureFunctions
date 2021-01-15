@@ -1,0 +1,57 @@
+name: Azure Container Registry + Azure Functions
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  IMAGEM_AZURECR: ${{ secrets.AZURECR_REGISTRY }}/functionappdistancias
+
+jobs:
+
+  build-acr:
+    env:
+      DIRETORIO_APLICACAO: ./FunctionAppDistancias
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Login no Azure Container Registry
+      uses: docker/login-action@v1.8.0
+      with:
+        registry: ${{ secrets.AZURECR_REGISTRY }}
+        username: ${{ secrets.AZURECR_USERNAME }}
+        password: ${{ secrets.AZURECR_PASSWORD }}
+
+    - name: Build de imagem e Push no Azure Container Registry
+      run: |
+        cd ${{ env.DIRETORIO_APLICACAO }}
+        docker build . --file Dockerfile --tag ${{ env.IMAGEM_AZURECR }}:latest
+        docker tag ${{ env.IMAGEM_AZURECR }}:latest ${{ env.IMAGEM_AZURECR }}:$GITHUB_RUN_NUMBER
+        docker push ${{ env.IMAGEM_AZURECR }}
+  deployment-azfunctions:
+    needs: [build-acr]
+
+    env:
+      NOME_WEBAPP: groffedistancias
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Azure Login - Conectando com Credenciais no Azure
+      uses: Azure/login@v1.1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Azure Functions Container Action
+      uses: Azure/functions-container-action@v1.0.1
+      env:
+        # Ajuste necessário devido a incompatibilidades desta Action
+        ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+      with:
+        app-name: ${{ env.NOME_WEBAPP }}
+        image: ${{ env.IMAGEM_AZURECR }}:${{ github.run_number }}
